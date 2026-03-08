@@ -7,7 +7,6 @@ from fastapi.responses import JSONResponse
 
 app = FastAPI()
 
-# Настройки для SoundCloud
 YDL_OPTIONS = {'format': 'bestaudio/best', 'noplaylist': True, 'quiet': True}
 
 @app.get("/api/stream")
@@ -26,31 +25,34 @@ def get_lyrics(artist: str, title: str):
     if not api_key:
         return {"lyrics": "Ошибка: Ключ API не найден в настройках Render"}
 
-    # ВАЖНО: Мы используем /v1/ вместо /v1beta/
-    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={api_key}"
+    # Пробуем несколько вариантов моделей (одна точно сработает!)
+    models = ["gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-pro"]
     
     prompt = f"Напиши текст песни {artist} - {title}. Отправь ТОЛЬКО текст песни, без аккордов и комментариев."
     data = {"contents": [{"parts": [{"text": prompt}]}]}
-
-    try:
-        req = urllib.request.Request(
-            url, 
-            data=json.dumps(data).encode('utf-8'), 
-            headers={'Content-Type': 'application/json'}
-        )
-        with urllib.request.urlopen(req) as response:
-            res = json.loads(response.read().decode('utf-8'))
-            if 'candidates' in res and res['candidates']:
-                text = res['candidates'][0]['content']['parts'][0]['text']
-                return JSONResponse(content={"lyrics": text.strip()})
-            else:
-                return {"lyrics": "ИИ не смог сгенерировать текст."}
-                
-    except urllib.error.HTTPError as e:
-        error_msg = e.read().decode('utf-8')
-        return {"lyrics": f"Ошибка Google ({e.code}): {error_msg}"}
-    except Exception as e:
-        return {"lyrics": f"Ошибка сервера: {str(e)}"}
+    
+    last_error = ""
+    
+    for model in models:
+        # Используем v1beta, так как она самая гибкая
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        
+        try:
+            req = urllib.request.Request(
+                url, 
+                data=json.dumps(data).encode('utf-8'), 
+                headers={'Content-Type': 'application/json'}
+            )
+            with urllib.request.urlopen(req, timeout=10) as response:
+                res = json.loads(response.read().decode('utf-8'))
+                if 'candidates' in res and res['candidates']:
+                    text = res['candidates'][0]['content']['parts'][0]['text']
+                    return JSONResponse(content={"lyrics": text.strip()})
+        except Exception as e:
+            last_error = str(e)
+            continue # Пробуем следующую модель в списке
+            
+    return {"lyrics": f"ИИ не смог найти слова. Последняя ошибка: {last_error}"}
 
 @app.get("/")
 def root():
