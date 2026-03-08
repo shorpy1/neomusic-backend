@@ -1,12 +1,13 @@
 import yt_dlp
 import urllib.request
 import json
+import os
 from fastapi import FastAPI, HTTPException
 
 app = FastAPI(title="NeoMusic Backend")
 
 stream_cache = {}
-lyrics_cache = {} # Кэш для текстов, чтобы не дергать Гугл дважды
+lyrics_cache = {}
 
 YDL_OPTIONS = {
     'format': 'bestaudio/best',
@@ -34,15 +35,18 @@ def get_stream(q: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# НОВЫЙ ЭНДПОИНТ ДЛЯ ИИ
 @app.get("/api/lyrics")
 def get_lyrics(artist: str, title: str):
     query = f"{artist} {title}"
     if query in lyrics_cache:
         return {"lyrics": lyrics_cache[query]}
 
-    # Твой ключ Gemini!
-    api_key = "AIzaSyCzUp9jH34_BFbgCVsaOlmCbCF1JeuLPFI"
+    # БЕРЕМ КЛЮЧ ИЗ СЕКРЕТОВ RENDER (ЕГО БОЛЬШЕ НЕТ В КОДЕ!)
+    api_key = os.environ.get("GEMINI_API_KEY")
+    
+    if not api_key:
+        return {"lyrics": "Ошибка: Ключ API не настроен на сервере."}
+
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
 
     prompt = f"Напиши текст песни {artist} - {title}. Отправь ТОЛЬКО текст песни, без аккордов и комментариев. Если песня инструментальная, ответь 'Текст не найден'."
@@ -61,4 +65,4 @@ def get_lyrics(artist: str, title: str):
 
 @app.get("/")
 def root():
-    return {"status": "NeoMusic Server API is running!"}
+    return {"status": "NeoMusic Server API is running securely!"}
