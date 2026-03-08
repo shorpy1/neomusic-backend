@@ -25,34 +25,31 @@ def get_lyrics(artist: str, title: str):
     if not api_key:
         return {"lyrics": "Ошибка: Ключ API не найден в настройках Render"}
 
-    # Пробуем несколько вариантов моделей (одна точно сработает!)
-    models = ["gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-pro"]
+    # Пробуем ВСЕ комбинации версий и моделей
+    versions = ["v1", "v1beta"]
+    models = ["gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-pro"]
     
     prompt = f"Напиши текст песни {artist} - {title}. Отправь ТОЛЬКО текст песни, без аккордов и комментариев."
     data = {"contents": [{"parts": [{"text": prompt}]}]}
     
-    last_error = ""
-    
-    for model in models:
-        # Используем v1beta, так как она самая гибкая
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-        
-        try:
-            req = urllib.request.Request(
-                url, 
-                data=json.dumps(data).encode('utf-8'), 
-                headers={'Content-Type': 'application/json'}
-            )
-            with urllib.request.urlopen(req, timeout=10) as response:
-                res = json.loads(response.read().decode('utf-8'))
-                if 'candidates' in res and res['candidates']:
-                    text = res['candidates'][0]['content']['parts'][0]['text']
-                    return JSONResponse(content={"lyrics": text.strip()})
-        except Exception as e:
-            last_error = str(e)
-            continue # Пробуем следующую модель в списке
+    for ver in versions:
+        for model in models:
+            url = f"https://generativelanguage.googleapis.com/{ver}/models/{model}:generateContent?key={api_key}"
+            try:
+                req = urllib.request.Request(
+                    url, 
+                    data=json.dumps(data).encode('utf-8'), 
+                    headers={'Content-Type': 'application/json'}
+                )
+                with urllib.request.urlopen(req, timeout=10) as response:
+                    res = json.loads(response.read().decode('utf-8'))
+                    if 'candidates' in res and res['candidates']:
+                        text = res['candidates'][0]['content']['parts'][0]['text']
+                        return JSONResponse(content={"lyrics": text.strip()})
+            except:
+                continue # Если эта пара (версия/модель) не подошла, пробуем следующую
             
-    return {"lyrics": f"ИИ не смог найти слова. Последняя ошибка: {last_error}"}
+    return {"lyrics": "ИИ не смог найти слова. Попробуй позже."}
 
 @app.get("/")
 def root():
