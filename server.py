@@ -1,9 +1,12 @@
 import yt_dlp
+import urllib.request
+import json
 from fastapi import FastAPI, HTTPException
 
 app = FastAPI(title="NeoMusic Backend")
 
 stream_cache = {}
+lyrics_cache = {} # Кэш для текстов, чтобы не дергать Гугл дважды
 
 YDL_OPTIONS = {
     'format': 'bestaudio/best',
@@ -16,40 +19,46 @@ YDL_OPTIONS = {
 @app.get("/api/stream")
 def get_stream(q: str):
     if q in stream_cache:
-        print(f"⚡️ Отдаю из кэша: {q}")
         return {"stream_url": stream_cache[q]}
 
-    # ХИТРОСТЬ: Ищем в SoundCloud (scsearch1:) вместо YouTube.
-    # SoundCloud не банит IP-адреса серверов Render!
     search_query = f"scsearch1:{q}"
-    print(f"🔍 Ищу: {search_query}")
-
     try:
         with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
             info = ydl.extract_info(search_query, download=False)
-            
         if not info or 'entries' not in info or not info['entries']:
-            print(f"❌ Ничего не найдено для: {q}")
             raise HTTPException(status_code=404, detail="Песня не найдена")
-            
-        track = info['entries'][0]
         
-        # SoundCloud сразу отдает прямую аудио-ссылку
-        audio_url = track.get('url')
-            
-        if not audio_url:
-            print(f"❌ Нет ссылки для: {q}")
-            raise HTTPException(status_code=404, detail="Нет ссылки")
-            
+        audio_url = info['entries'][0].get('url')
         stream_cache[q] = audio_url
-        print(f"✅ Успех: {q}")
         return {"stream_url": audio_url}
-        
     except Exception as e:
-        print(f"❌ Ошибка yt-dlp: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# Исправляем ошибку 404 при простом переходе по ссылке
+# НОВЫЙ ЭНДПОИНТ ДЛЯ ИИ
+@app.get("/api/lyrics")
+def get_lyrics(artist: str, title: str):
+    query = f"{artist} {title}"
+    if query in lyrics_cache:
+        return {"lyrics": lyrics_cache[query]}
+
+    # Твой ключ Gemini!
+    api_key = "AIzaSyCzUp9jH34_BFbgCVsaOlmCbCF1JeuLPFI"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+
+    prompt = f"Напиши текст песни {artist} - {title}. Отправь ТОЛЬКО текст песни, без аккордов и комментариев. Если песня инструментальная, ответь 'Текст не найден'."
+    data = {"contents": [{"parts": [{"text": prompt}]}]}
+
+    try:
+        req = urllib.request.Request(url, data=json.dumps(data).encode('utf-8'), headers={'Content-Type': 'application/json'})
+        with urllib.request.urlopen(req) as response:
+            result = json.loads(response.read().decode())
+            text = result.get('candidates', [{}])[0].get('content', {}).get('parts', [{}])[0].get('text', 'Текст не найден.')
+            
+            lyrics_cache[query] = text.strip()
+            return {"lyrics": text.strip()}
+    except Exception as e:
+        return {"lyrics": "Текст не найден (Ошибка сервера)."}
+
 @app.get("/")
 def root():
-    return {"status": "NeoMusic Server is running on SoundCloud bypass! 🎵"}
+    return {"status": "NeoMusic Server API is running!"}
