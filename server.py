@@ -26,15 +26,31 @@ def get_lyrics(artist: str, title: str):
         return {"lyrics": "Ошибка: Ключ API не найден в настройках Render"}
 
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
-    prompt = f"Напиши текст песни {artist} - {title}. Только текст, без аккордов."
+    prompt = f"Напиши текст песни {artist} - {title}. Отправь ТОЛЬКО текст песни, без лишних слов."
     data = {"contents": [{"parts": [{"text": prompt}]}]}
 
     try:
-        req = urllib.request.Request(url, data=json.dumps(data).encode('utf-8'), headers={'Content-Type': 'application/json'})
+        req = urllib.request.Request(
+            url, 
+            data=json.dumps(data).encode('utf-8'), 
+            headers={'Content-Type': 'application/json'}
+        )
         with urllib.request.urlopen(req) as response:
             res = json.loads(response.read().decode('utf-8'))
-            text = res['candidates'][0]['content']['parts'][0]['text']
-            # Возвращаем чистый текст
-            return JSONResponse(content={"lyrics": text.strip()}, media_type="application/json; charset=utf-8")
+            # Проверяем, есть ли ответ от ИИ
+            if 'candidates' in res and res['candidates']:
+                text = res['candidates'][0]['content']['parts'][0]['text']
+                return JSONResponse(content={"lyrics": text.strip()})
+            else:
+                return {"lyrics": f"ИИ не выдал результат. Ответ: {json.dumps(res)}"}
+                
+    except urllib.error.HTTPError as e:
+        # Если Google вернул ошибку (например 400 или 403), мы её увидим
+        error_msg = e.read().decode('utf-8')
+        return {"lyrics": f"Ошибка Google ({e.code}): {error_msg}"}
     except Exception as e:
-        return {"lyrics": f"Ошибка ИИ: {str(e)}"}
+        return {"lyrics": f"Ошибка сервера: {str(e)}"}
+
+@app.get("/")
+def root():
+    return {"status": "NeoMusic Server is running!"}
