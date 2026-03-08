@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 
 app = FastAPI()
 
+# Настройки для SoundCloud
 YDL_OPTIONS = {'format': 'bestaudio/best', 'noplaylist': True, 'quiet': True}
 
 @app.get("/api/stream")
@@ -25,9 +26,10 @@ def get_lyrics(artist: str, title: str):
     if not api_key:
         return {"lyrics": "Ошибка: Ключ API не найден в настройках Render"}
 
-    # Пробуем версию v1 (стабильную)
+    # ВАЖНО: Мы используем /v1/ вместо /v1beta/
     url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={api_key}"
-    prompt = f"Напиши текст песни {artist} - {title}. Отправь ТОЛЬКО текст песни, без лишних слов."
+    
+    prompt = f"Напиши текст песни {artist} - {title}. Отправь ТОЛЬКО текст песни, без аккордов и комментариев."
     data = {"contents": [{"parts": [{"text": prompt}]}]}
 
     try:
@@ -45,9 +47,8 @@ def get_lyrics(artist: str, title: str):
                 return {"lyrics": "ИИ не смог сгенерировать текст."}
                 
     except urllib.error.HTTPError as e:
-        # Если v1 не сработала, сервер сам попробует v1beta (на всякий случай)
         error_msg = e.read().decode('utf-8')
-        return {"lyrics": f"Ошибка Google: {error_msg}"}
+        return {"lyrics": f"Ошибка Google ({e.code}): {error_msg}"}
     except Exception as e:
         return {"lyrics": f"Ошибка сервера: {str(e)}"}
 
