@@ -5,14 +5,12 @@ app = FastAPI(title="NeoMusic Backend")
 
 stream_cache = {}
 
-# Максимально надежные настройки
 YDL_OPTIONS = {
     'format': 'bestaudio/best',
     'noplaylist': True,
     'quiet': True,
     'skip_download': True,
-    'extract_flat': False,
-    'default_search': 'ytsearch' # <--- ВОТ ОНО! Указываем явно, что мы ИЩЕМ, а не переходим по ссылке
+    'extract_flat': False
 }
 
 @app.get("/api/stream")
@@ -21,13 +19,13 @@ def get_stream(q: str):
         print(f"⚡️ Отдаю из кэша: {q}")
         return {"stream_url": stream_cache[q]}
 
-    # Теперь мы просто передаем название песни, никаких префиксов!
-    search_query = f"{q} official audio"
+    # ХИТРОСТЬ: Ищем в SoundCloud (scsearch1:) вместо YouTube.
+    # SoundCloud не банит IP-адреса серверов Render!
+    search_query = f"scsearch1:{q}"
     print(f"🔍 Ищу: {search_query}")
 
     try:
         with yt_dlp.YoutubeDL(YDL_OPTIONS) as ydl:
-            # Парсим Ютуб
             info = ydl.extract_info(search_query, download=False)
             
         if not info or 'entries' not in info or not info['entries']:
@@ -35,17 +33,9 @@ def get_stream(q: str):
             raise HTTPException(status_code=404, detail="Песня не найдена")
             
         track = info['entries'][0]
-        audio_url = None
         
-        # Ищем чистый аудиопоток
-        for f in track.get('formats', []):
-            if f.get('acodec') != 'none' and f.get('vcodec') == 'none':
-                audio_url = f.get('url')
-                break
-        
-        # Запасной вариант, если чистого аудио нет
-        if not audio_url:
-            audio_url = track.get('url')
+        # SoundCloud сразу отдает прямую аудио-ссылку
+        audio_url = track.get('url')
             
         if not audio_url:
             print(f"❌ Нет ссылки для: {q}")
@@ -58,3 +48,8 @@ def get_stream(q: str):
     except Exception as e:
         print(f"❌ Ошибка yt-dlp: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# Исправляем ошибку 404 при простом переходе по ссылке
+@app.get("/")
+def root():
+    return {"status": "NeoMusic Server is running on SoundCloud bypass! 🎵"}
